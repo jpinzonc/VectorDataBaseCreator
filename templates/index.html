@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Database Creator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f0f2f5; }
+        .card { border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+        .card-header { border-radius: 12px 12px 0 0 !important; font-weight: 600; }
+        .status-badge { font-size: .8rem; padding: .25em .6em; }
+        .result-icon { font-size: 3rem; }
+        .flash-msg { border-radius: 8px; }
+        .progress { height: 24px; }
+        .progress-bar { transition: width .3s ease; }
+        #progress-modal .modal-content { border: none; border-radius: 16px; }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+
+                <div class="text-center mb-4">
+                    <h2 class="fw-bold">&#x1f5c4;&#xfe0f; Vector Database Creator</h2>
+                    <p class="text-muted">Convert PDF files into a searchable Chroma vector database</p>
+                </div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} flash-msg d-flex align-items-center gap-2 py-2">
+                                <span>{{ '&#x2705;' if category == 'success' else '&#x274c;' }}</span>
+                                <span>{{ message }}</span>
+                                <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">&#x2699;&#xfe0f; Configuration</div>
+                    <div class="card-body">
+                        <form method="POST" action="/create" id="config-form">
+                            <div class="mb-3">
+                                <label for="input_folder" class="form-label fw-semibold">Input Folder</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="input_folder" name="input_folder"
+                                           placeholder="e.g. /path/to/pdf_folder" required
+                                           oninput="onInputChange(this)">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="browse(this, 'input_folder')">
+                                        &#x1f4c2; Browse
+                                    </button>
+                                </div>
+                                <div class="form-text">Folder containing files to process (PDF, TXT, RTF).</div>
+                            </div>
+
+                            <div id="output_section" class="mb-3" style="display:none">
+                                <label for="output_folder" class="form-label fw-semibold">Output Folder</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="output_folder" name="output_folder"
+                                           placeholder="e.g. /path/to/vector_db" required
+                                           oninput="onOutputChange(this)">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="browse(this, 'output_folder')">
+                                        &#x1f4c2; Browse
+                                    </button>
+                                </div>
+                                <div class="form-text">Folder where the vector database will be created.</div>
+                            </div>
+
+                            <div id="name_section" class="mb-3" style="display:none">
+                                <label for="output_name" class="form-label fw-semibold">Database Name</label>
+                                <input type="text" class="form-control" id="output_name" name="output_name"
+                                       placeholder="Auto-filled from output folder"
+                                       oninput="onNameChange(this)">
+                                <div class="form-text">Name for the database (appended to output path).</div>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary flex-grow-1 py-2 fw-semibold">
+                                    &#x1f680; Create Database
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary py-2 px-3" id="clear-btn"
+                                        onclick="clearPage()" style="display:none">
+                                    &#x1f5d1; Clear
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                {% if result %}
+                <script>document.getElementById('clear-btn').style.display = 'block';</script>
+                <div class="card">
+                    <div class="card-header bg-{{ 'success' if result.success else 'danger' }} text-white">
+                        {{ '&#x2705; Success' if result.success else '&#x274c; Failed' }}
+                    </div>
+                    <div class="card-body">
+                        {% if result.success %}
+                        <div class="row text-center mb-4">
+                            <div class="col-4">
+                                <div class="fs-2 fw-bold text-primary">{{ result.total_files }}</div>
+                                <div class="text-muted small">Files Found</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="fs-2 fw-bold text-success">{{ result.total_processed }}</div>
+                                <div class="text-muted small">PDFs Processed</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="fs-2 fw-bold text-info">{{ result.total_vectors }}</div>
+                                <div class="text-muted small">Vectors Created</div>
+                            </div>
+                        </div>
+                        <p class="mb-2"><strong>Output:</strong> <code>{{ result.output_dir }}</code></p>
+                        {% endif %}
+
+                        {% if result.summary %}
+                        <hr>
+                        <h6 class="fw-semibold mb-3">&#x1f4cb; Per-File Report</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Status</th>
+                                        <th>Chunks</th>
+                                        <th>Filename</th>
+                                        {% if result.summary[0].error is defined %}<th>Error</th>{% endif %}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in result.summary %}
+                                    <tr>
+                                        <td>
+                                            {% if item.status == 'success' %}
+                                            <span class="badge bg-success status-badge">&#x2705; Success</span>
+                                            {% else %}
+                                            <span class="badge bg-danger status-badge">&#x274c; Failed</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ item.chunks }}</td>
+                                        <td class="text-truncate" style="max-width:300px">{{ item.file }}</td>
+                                        {% if item.error is defined %}<td class="text-danger small">{{ item.error }}</td>{% endif %}
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% endif %}
+
+                        {% if result.error and not result.success %}
+                        <p class="text-danger mb-0">{{ result.error }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Modal -->
+    <div class="modal fade" id="progress-modal" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content p-4">
+                <div class="text-center mb-3">
+                    <div class="spinner-border text-primary mb-3" role="status" style="width:3rem;height:3rem">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 class="fw-bold" id="progress-title">Processing files...</h5>
+                    <p class="text-muted mb-0 small" id="progress-file"></p>
+                </div>
+                <div class="progress mb-2">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" id="progress-bar"
+                         role="progressbar" style="width:0%">0%</div>
+                </div>
+                <p class="text-muted text-center small mb-0" id="progress-count"></p>
+                <button class="btn btn-outline-danger w-100 mt-3" id="cancel-btn" onclick="cancel()">
+                    &#x2716; Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let outputBase = '';
+
+        function onInputChange(input) {
+            const section = document.getElementById('output_section');
+            const outputField = document.getElementById('output_folder');
+            if (input.value.trim()) {
+                section.style.display = 'block';
+                const folderName = input.value.trim().split('/').pop().split('\\').pop() || 'data';
+                const defaultName = folderName + '_vector_db';
+                const parent = input.value.trim().replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/';
+                outputBase = parent;
+                outputField.value = parent + '/' + defaultName;
+                onOutputChange(outputField);
+            } else {
+                section.style.display = 'none';
+                document.getElementById('name_section').style.display = 'none';
+            }
+        }
+
+        function onOutputChange(input) {
+            const section = document.getElementById('name_section');
+            const nameInput = document.getElementById('output_name');
+            if (input.value.trim()) {
+                section.style.display = 'block';
+                outputBase = input.value.trim();
+                const folderName = input.value.trim().split('/').pop().split('\\').pop() || '';
+                if (folderName) {
+                    nameInput.value = folderName;
+                }
+            } else {
+                section.style.display = 'none';
+            }
+        }
+
+        function onNameChange(input) {
+            const outputField = document.getElementById('output_folder');
+            if (input.value.trim() && outputBase) {
+                outputField.value = outputBase.replace(/\/+$/, '') + '/' + input.value.trim();
+            }
+        }
+
+        function clearPage() {
+            document.getElementById('clear-btn').style.display = 'none';
+            document.getElementById('config-form').reset();
+            document.getElementById('output_section').style.display = 'none';
+            document.getElementById('name_section').style.display = 'none';
+            document.querySelectorAll('.alert').forEach(function (el) { el.remove(); });
+            var container = document.querySelector('.container .row .col-lg-8');
+            var cards = container.querySelectorAll('.card');
+            for (var i = cards.length - 1; i > 0; i--) { cards[i].remove(); }
+            outputBase = '';
+        }
+
+        async function browse(btn, targetId) {
+            btn.disabled = true;
+            btn.textContent = 'Opening...';
+            try {
+                const resp = await fetch('/browse', { method: 'POST' });
+                const data = await resp.json();
+                if (data.folder) {
+                    document.getElementById(targetId).value = data.folder;
+                    if (targetId === 'input_folder') onInputChange(document.getElementById(targetId));
+                    else if (targetId === 'output_folder') onOutputChange(document.getElementById(targetId));
+                }
+            } catch (e) {
+                alert('Browse failed: ' + e.message);
+            }
+            btn.disabled = false;
+            btn.textContent = 'Browse';
+        }
+
+        function showResult(r) {
+            const container = document.querySelector('.container .row .col-lg-8');
+            const resultCard = document.createElement('div');
+            resultCard.innerHTML = '<div class="card">' +
+                '<div class="card-header bg-success text-white">&#x2705; Success</div>' +
+                '<div class="card-body">' +
+                '<div class="row text-center mb-4">' +
+                '<div class="col-4"><div class="fs-2 fw-bold text-primary">' + r.total_files + '</div><div class="text-muted small">Files Found</div></div>' +
+                '<div class="col-4"><div class="fs-2 fw-bold text-success">' + r.total_processed + '</div><div class="text-muted small">Files Processed</div></div>' +
+                '<div class="col-4"><div class="fs-2 fw-bold text-info">' + r.total_vectors + '</div><div class="text-muted small">Vectors Created</div></div>' +
+                '</div>' +
+                '<p class="mb-2"><strong>Output:</strong> <code>' + r.output_dir + '</code></p>' +
+                (r.summary ? '<hr><h6 class="fw-semibold mb-3">&#x1f4cb; Per-File Report</h6><div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>Status</th><th>Chunks</th><th>Filename</th></tr></thead><tbody>' +
+                    r.summary.map(function (item) {
+                        return '<tr><td>' +
+                            (item.status === 'success'
+                                ? '<span class="badge bg-success status-badge">&#x2705; Success</span>'
+                                : '<span class="badge bg-danger status-badge">&#x274c; Failed</span>') +
+                            '</td><td>' + item.chunks + '</td><td class="text-truncate" style="max-width:300px">' + item.file + '</td></tr>';
+                    }).join('') +
+                    '</tbody></table></div>' : '') +
+                '</div></div>';
+            document.getElementById('clear-btn').style.display = 'block';
+            container.appendChild(resultCard);
+            resultCard.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Progress modal
+        const modal = new bootstrap.Modal(document.getElementById('progress-modal'));
+        let activeES = null;
+        let cancelFolder = '';
+
+        function cancel() {
+            if (activeES) {
+                activeES.close();
+                activeES = null;
+            }
+            if (cancelFolder) {
+                const formData = new FormData();
+                formData.append('folder', cancelFolder);
+                fetch('/cancel', { method: 'POST', body: formData });
+            }
+            modal.hide();
+        }
+
+        function showProgress() {
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-bar').textContent = '0%';
+            document.getElementById('progress-title').textContent = 'Initializing...';
+            document.getElementById('progress-file').textContent = '';
+            document.getElementById('progress-count').textContent = '';
+            modal.show();
+        }
+
+        function updateProgress(data) {
+            const bar = document.getElementById('progress-bar');
+            if (data.total) {
+                const pct = Math.round((data.current / data.total) * 100);
+                bar.style.width = pct + '%';
+                bar.textContent = pct + '%';
+            }
+            if (data.message) document.getElementById('progress-title').textContent = data.message;
+            if (data.file) document.getElementById('progress-file').textContent = data.file;
+            if (data.current !== undefined && data.total) {
+                document.getElementById('progress-count').textContent = data.current + ' / ' + data.total;
+            }
+        }
+
+        document.getElementById('config-form').addEventListener('submit', function (e) {
+            e.preventDefault();
+            showProgress();
+
+            const inputFolder = document.getElementById('input_folder').value.trim();
+            const outputName = document.getElementById('output_name').value.trim();
+            const outputFolder = document.getElementById('output_folder').value.trim();
+            cancelFolder = outputFolder;
+
+            const params = new URLSearchParams();
+            params.set('input_folder', inputFolder);
+            params.set('output_name', outputName);
+            params.set('output_folder', outputFolder);
+
+            activeES = new EventSource('/create/stream?' + params.toString());
+            const es = activeES;
+
+            es.onmessage = function (event) {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'init' || data.type === 'progress' || data.type === 'file_start' || data.type === 'saving') {
+                    updateProgress(data);
+                } else if (data.type === 'file_done') {
+                    updateProgress(data);
+                } else if (data.type === 'done') {
+                    es.close();
+                    activeES = null;
+                    modal.hide();
+                    showResult(data.result);
+                } else if (data.type === 'error') {
+                    es.close();
+                    activeES = null;
+                    modal.hide();
+                    alert('Error: ' + data.error);
+                }
+            };
+
+            es.onerror = function () {
+                es.close();
+                activeES = null;
+                modal.hide();
+                alert('Connection lost. Please try again.');
+            };
+        });
+    </script>
+</body>
+</html>

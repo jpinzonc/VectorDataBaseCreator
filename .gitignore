@@ -1,0 +1,9 @@
+*secret*
+*secret/*.*
+*secret/secret_info.py*
+*__pycache__**
+*_downloads
+*data*
+*databases*
+*scripts_original*
+*.DS_Store
