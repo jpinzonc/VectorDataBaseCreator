@@ -32,6 +32,14 @@ def resolve_output(input_folder, output_name=None, output_folder=None):
     return os.path.join(os.path.dirname(input_folder.rstrip('/\\')), name)
 
 
+def _get_advanced():
+    return {
+        'chunk_size': int(request.form.get('chunk_size', 1000)),
+        'chunk_overlap': int(request.form.get('chunk_overlap', 150)),
+        'embedding_model': request.form.get('embedding_model', 'all-MiniLM-L6-v2'),
+    }
+
+
 @app.route('/create', methods=['POST'])
 def create():
     input_folder = request.form.get('input_folder', '').strip()
@@ -43,7 +51,8 @@ def create():
         return render_template('index.html')
 
     output_folder = resolve_output(input_folder, output_name, output_folder_picked or None)
-    result = create_vector_db(input_folder, output_folder, hf_token=HF_TOKEN)
+    advanced = _get_advanced()
+    result = create_vector_db(input_folder, output_folder, hf_token=HF_TOKEN, **advanced)
 
     if result['success']:
         flash(f"Database created successfully! {result['total_vectors']} vectors from {result['total_processed']} files.", 'success')
@@ -65,9 +74,15 @@ def create_stream():
         return Response(no_folder(), mimetype='text/event-stream')
 
     output_folder = resolve_output(input_folder, output_name, output_folder_picked or None)
+    chunk_size = int(request.args.get('chunk_size', 1000))
+    chunk_overlap = int(request.args.get('chunk_overlap', 150))
+    embedding_model = request.args.get('embedding_model', 'all-MiniLM-L6-v2')
 
     def generate():
-        for event in create_vector_db_stream(input_folder, output_folder, hf_token=HF_TOKEN):
+        for event in create_vector_db_stream(
+            input_folder, output_folder, hf_token=HF_TOKEN,
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap, embedding_model=embedding_model
+        ):
             yield f"data: {json.dumps(event)}\n\n"
 
     return Response(generate(), mimetype='text/event-stream')

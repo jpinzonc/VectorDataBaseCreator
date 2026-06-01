@@ -77,6 +77,32 @@
                                 <div class="form-text">Name for the database (appended to output path).</div>
                             </div>
 
+                            <div class="mb-3">
+                                <a class="text-decoration-none text-muted small" data-bs-toggle="collapse"
+                                   href="#advanced-section" role="button">
+                                    &#x2699;&#xfe0f; Advanced Settings
+                                </a>
+                                <div class="collapse mt-2" id="advanced-section">
+                                    <div class="row g-2">
+                                        <div class="col-4">
+                                            <label for="chunk_size" class="form-label small">Chunk Size</label>
+                                            <input type="number" class="form-control form-control-sm" id="chunk_size"
+                                                   name="chunk_size" value="1000" min="100" step="50">
+                                        </div>
+                                        <div class="col-4">
+                                            <label for="chunk_overlap" class="form-label small">Overlap</label>
+                                            <input type="number" class="form-control form-control-sm" id="chunk_overlap"
+                                                   name="chunk_overlap" value="150" min="0" step="10">
+                                        </div>
+                                        <div class="col-4">
+                                            <label for="embedding_model" class="form-label small">Embedding Model</label>
+                                            <input type="text" class="form-control form-control-sm" id="embedding_model"
+                                                   name="embedding_model" value="all-MiniLM-L6-v2">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="d-flex gap-2">
                                 <button type="submit" class="btn btn-primary flex-grow-1 py-2 fw-semibold">
                                     &#x1f680; Create Database
@@ -336,6 +362,9 @@
             params.set('input_folder', inputFolder);
             params.set('output_name', outputName);
             params.set('output_folder', outputFolder);
+            params.set('chunk_size', document.getElementById('chunk_size').value || '1000');
+            params.set('chunk_overlap', document.getElementById('chunk_overlap').value || '150');
+            params.set('embedding_model', document.getElementById('embedding_model').value || 'all-MiniLM-L6-v2');
 
             activeES = new EventSource('/create/stream?' + params.toString());
             const es = activeES;
