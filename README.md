@@ -1,6 +1,6 @@
 # Vector Database Creator
 
-Web application to convert PDF, TXT, and RTF files into a searchable Chroma vector database using HuggingFace embeddings.
+Web application to convert PDF, TXT, and RTF files into a searchable Chroma or Pinecone vector database using HuggingFace embeddings.
 
 ## Project Structure
 
@@ -30,6 +30,13 @@ export HF_TOKEN="your_huggingface_token_here"
 
 > You can get a free token at https://huggingface.co/settings/tokens
 
+To use Pinecone, also configure its API key (the app can alternatively read
+`PINECONE_API_KEY` from `secret/secret_info.py`):
+
+```bash
+export PINECONE_API_KEY="your_pinecone_api_key_here"
+```
+
 ## Usage
 
 ### 1. Prepare your data
@@ -47,8 +54,8 @@ Open http://localhost:5000 in your browser.
 ### 3. Create a database
 
 1. **Input Folder** — Select or type the path to your folder with source files
-2. **Output Folder** — Auto-filled; you can change it or browse for another location
-3. **Database Name** — Auto-filled from the output folder name; edits are appended to the output path
+2. **Vector Store** — Choose local Chroma storage or cloud-hosted Pinecone
+3. For **Chroma**, choose the output folder and database name. For **Pinecone**, provide an index name and optional namespace; a missing serverless index is created automatically.
 4. **Advanced Settings** (optional) — Click to expand and adjust:
    - **Chunk Size** — How many characters per chunk (default: 1000)
    - **Overlap** — Characters overlapped between chunks (default: 150)

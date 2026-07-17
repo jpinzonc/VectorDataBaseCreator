@@ -24,7 +24,7 @@
 
                 <div class="text-center mb-4">
                     <h2 class="fw-bold">&#x1f5c4;&#xfe0f; Vector Database Creator</h2>
-                    <p class="text-muted">Convert PDF files into a searchable Chroma vector database</p>
+                    <p class="text-muted">Convert PDF, TXT, and RTF files into a searchable vector database</p>
                 </div>
 
                 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -56,6 +56,15 @@
                                 <div class="form-text">Folder containing files to process (PDF, TXT, RTF).</div>
                             </div>
 
+                            <div class="mb-3">
+                                <label for="vector_store" class="form-label fw-semibold">Vector Store</label>
+                                <select class="form-select" id="vector_store" name="vector_store"
+                                        onchange="onVectorStoreChange()">
+                                    <option value="chroma" selected>Chroma (local)</option>
+                                    <option value="pinecone">Pinecone (cloud)</option>
+                                </select>
+                            </div>
+
                             <div id="output_section" class="mb-3" style="display:none">
                                 <label for="output_folder" class="form-label fw-semibold">Output Folder</label>
                                 <div class="input-group">
@@ -75,6 +84,35 @@
                                        placeholder="Auto-filled from output folder"
                                        oninput="onNameChange(this)">
                                 <div class="form-text">Name for the database (appended to output path).</div>
+                            </div>
+
+                            <div id="pinecone_section" class="mb-3" style="display:none">
+                                <div class="row g-2">
+                                    <div class="col-md-6">
+                                        <label for="pinecone_index" class="form-label fw-semibold">Pinecone Index</label>
+                                        <input type="text" class="form-control" id="pinecone_index"
+                                               name="pinecone_index" placeholder="my-documents">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="pinecone_namespace" class="form-label fw-semibold">Namespace</label>
+                                        <input type="text" class="form-control" id="pinecone_namespace"
+                                               name="pinecone_namespace" placeholder="Optional">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="pinecone_cloud" class="form-label small">Cloud</label>
+                                        <select class="form-select form-select-sm" id="pinecone_cloud" name="pinecone_cloud">
+                                            <option value="aws" selected>AWS</option>
+                                            <option value="gcp">Google Cloud</option>
+                                            <option value="azure">Azure</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="pinecone_region" class="form-label small">Region</label>
+                                        <input type="text" class="form-control form-control-sm" id="pinecone_region"
+                                               name="pinecone_region" value="us-east-1">
+                                    </div>
+                                </div>
+                                <div class="form-text">A missing index is created automatically. Existing indexes must match the embedding dimension.</div>
                             </div>
 
                             <div class="mb-3">
@@ -131,7 +169,7 @@
                             </div>
                             <div class="col-4">
                                 <div class="fs-2 fw-bold text-success">{{ result.total_processed }}</div>
-                                <div class="text-muted small">PDFs Processed</div>
+                                <div class="text-muted small">Files Processed</div>
                             </div>
                             <div class="col-4">
                                 <div class="fs-2 fw-bold text-info">{{ result.total_vectors }}</div>
@@ -212,6 +250,17 @@
     <script>
         let outputBase = '';
 
+        function onVectorStoreChange() {
+            const isPinecone = document.getElementById('vector_store').value === 'pinecone';
+            const hasInput = Boolean(document.getElementById('input_folder').value.trim());
+            document.getElementById('pinecone_section').style.display = isPinecone ? 'block' : 'none';
+            document.getElementById('output_section').style.display = !isPinecone && hasInput ? 'block' : 'none';
+            document.getElementById('name_section').style.display =
+                !isPinecone && document.getElementById('output_folder').value.trim() ? 'block' : 'none';
+            document.getElementById('output_folder').required = !isPinecone;
+            document.getElementById('pinecone_index').required = isPinecone;
+        }
+
         function onInputChange(input) {
             const section = document.getElementById('output_section');
             const outputField = document.getElementById('output_folder');
@@ -223,10 +272,15 @@
                 outputBase = parent;
                 outputField.value = parent + '/' + defaultName;
                 onOutputChange(outputField);
+                if (!document.getElementById('pinecone_index').value) {
+                    document.getElementById('pinecone_index').value = folderName.toLowerCase()
+                        .replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'documents';
+                }
             } else {
                 section.style.display = 'none';
                 document.getElementById('name_section').style.display = 'none';
             }
+            onVectorStoreChange();
         }
 
         function onOutputChange(input) {
@@ -261,6 +315,7 @@
             var cards = container.querySelectorAll('.card');
             for (var i = cards.length - 1; i > 0; i--) { cards[i].remove(); }
             outputBase = '';
+            onVectorStoreChange();
         }
 
         async function browse(btn, targetId) {
@@ -356,12 +411,18 @@
             const inputFolder = document.getElementById('input_folder').value.trim();
             const outputName = document.getElementById('output_name').value.trim();
             const outputFolder = document.getElementById('output_folder').value.trim();
-            cancelFolder = outputFolder;
+            const vectorStore = document.getElementById('vector_store').value;
+            cancelFolder = vectorStore === 'chroma' ? outputFolder : '';
 
             const params = new URLSearchParams();
             params.set('input_folder', inputFolder);
             params.set('output_name', outputName);
             params.set('output_folder', outputFolder);
+            params.set('vector_store', vectorStore);
+            params.set('pinecone_index', document.getElementById('pinecone_index').value.trim());
+            params.set('pinecone_namespace', document.getElementById('pinecone_namespace').value.trim());
+            params.set('pinecone_cloud', document.getElementById('pinecone_cloud').value);
+            params.set('pinecone_region', document.getElementById('pinecone_region').value.trim());
             params.set('chunk_size', document.getElementById('chunk_size').value || '1000');
             params.set('chunk_overlap', document.getElementById('chunk_overlap').value || '150');
             params.set('embedding_model', document.getElementById('embedding_model').value || 'all-MiniLM-L6-v2');

@@ -10,10 +10,14 @@ if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
 try:
-    from secret.secret_info import HUG_FACE_KEY
-    HF_TOKEN = HUG_FACE_KEY
+    from secret import secret_info
 except ImportError:
-    HF_TOKEN = os.environ.get('HF_TOKEN', '')
+    secret_info = None
+
+HF_TOKEN = getattr(secret_info, 'HUG_FACE_KEY', os.environ.get('HF_TOKEN', ''))
+PINECONE_API_KEY = getattr(
+    secret_info, 'PINECONE_API_KEY', os.environ.get('PINECONE_API_KEY', '')
+)
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -40,6 +44,17 @@ def _get_advanced():
     }
 
 
+def _get_storage(values):
+    return {
+        'vector_store': values.get('vector_store', 'chroma').strip().lower(),
+        'pinecone_api_key': PINECONE_API_KEY,
+        'pinecone_index': values.get('pinecone_index', '').strip(),
+        'pinecone_namespace': values.get('pinecone_namespace', '').strip(),
+        'pinecone_cloud': values.get('pinecone_cloud', 'aws').strip().lower(),
+        'pinecone_region': values.get('pinecone_region', 'us-east-1').strip(),
+    }
+
+
 @app.route('/create', methods=['POST'])
 def create():
     input_folder = request.form.get('input_folder', '').strip()
@@ -52,7 +67,10 @@ def create():
 
     output_folder = resolve_output(input_folder, output_name, output_folder_picked or None)
     advanced = _get_advanced()
-    result = create_vector_db(input_folder, output_folder, hf_token=HF_TOKEN, **advanced)
+    storage = _get_storage(request.form)
+    result = create_vector_db(
+        input_folder, output_folder, hf_token=HF_TOKEN, **advanced, **storage
+    )
 
     if result['success']:
         flash(f"Database created successfully! {result['total_vectors']} vectors from {result['total_processed']} files.", 'success')
@@ -77,11 +95,13 @@ def create_stream():
     chunk_size = int(request.args.get('chunk_size', 1000))
     chunk_overlap = int(request.args.get('chunk_overlap', 150))
     embedding_model = request.args.get('embedding_model', 'all-MiniLM-L6-v2')
+    storage = _get_storage(request.args)
 
     def generate():
         for event in create_vector_db_stream(
             input_folder, output_folder, hf_token=HF_TOKEN,
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap, embedding_model=embedding_model
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap,
+            embedding_model=embedding_model, **storage
         ):
             yield f"data: {json.dumps(event)}\n\n"
 
